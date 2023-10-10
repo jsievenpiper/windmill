@@ -20,11 +20,13 @@
 //!                +------+-----+----------+------+---+   OPi 3  +---+------+----------+-----+------+
 //!
 
+use clap::Parser;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
 use crate::fixture::Windmill;
 
+pub mod cli;
 pub mod fixture;
 pub mod ola;
 pub mod pwm;
@@ -66,8 +68,11 @@ const MAX_SPEED_CHANGE_PER_CYCLE: u8 = 1;
 /// state, or a proposed state in different contexts.
 #[tokio::main]
 async fn main() -> Result<(), &'static str> {
+  let args = cli::Args::parse();
+
   println!("We're off to see the wizard...");
   wiringpi::init()?;
+  ola::ensure_patches_exist(args.universe).await?;
 
   // For the two systems to communicate, we set up an unbounded channel for `Windmill` state messages to be passed from
   // one end to the other. This channel is convenient because we only need one-way message passing: from the OLA
@@ -81,7 +86,7 @@ async fn main() -> Result<(), &'static str> {
   let ola_task = tokio::task::spawn_blocking(move || {
     // Once start is called here, this task should never return. Under the hood it will call `Run` on the underlying
     // receive server. If this task returns, our fixture has failed.
-    ola::start(tx)
+    ola::start(tx, args.speed_channel, args.direction_channel)
   });
 
   // Start another process for the receiving end, which will use the OrangePi's physical GPIO pins to dive a PWM signal

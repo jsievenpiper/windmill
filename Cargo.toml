@@ -2,10 +2,13 @@
   name = "windmill"
   version = "0.1.0"
   edition = "2021"
+  authors = [ "Justin Sievenpiper <justin@sievenpiper.co>" ]
 
 [dependencies]
+  clap = { version = "4.4.6", features = [ "derive" ] }
   cxx = "1.0.107"
   tokio = { version = "1.32.0", features = [ "full" ] }
+  tokio-retry = "0.3.0"
 
 [build-dependencies]
   cxx-build = "1.0.107"
