@@ -22,6 +22,7 @@
 
 use clap::Parser;
 use tokio::select;
+use tokio::signal::unix::SignalKind;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
 use crate::fixture::Windmill;
@@ -166,7 +167,13 @@ async fn main() -> Result<(), &'static str> {
     }
   });
 
-  let abort_task = tokio::signal::ctrl_c();
+  // Establishes the set of signals one should listen to in a long-running process to gracefully handle most types of
+  // easy shutdown scenarios.
+  let ctrl_c = tokio::signal::ctrl_c();
+  let mut terminate = tokio::signal::unix::signal(SignalKind::terminate())
+    .map_err(|_| "could not wire up listener for terminate signal")?;
+  let mut interrupt = tokio::signal::unix::signal(SignalKind::interrupt())
+    .map_err(|_| "could not wire up listener for interrupt signal")?;
 
   // So here's the thing: if we've done our job correctly, neither of these processes will die, and we'll be happy
   // campers. If something goes wrong, `select!` will make sure that the first thing to die quickly kills the rest of
@@ -174,19 +181,9 @@ async fn main() -> Result<(), &'static str> {
   select! {
     ola_err = ola_task => ola_err.map_err(|_| "OpenLightingArchitecture thread panicked!")?,
     windmill_err = windmill_task => windmill_err.map_err(|_| "Windmill thread panicked!")?,
-    _ = abort_task => {
-      // Simple clean up task for when the application is manually killed. This will turn off the brake and disable the
-      // safety which relays the PWM signal. This should pull the motor controller off and discharge the motor to the
-      // braking resistor. This isn't totally fool-proof, but at least if you hit CTRL-C in a panic it'll attempt to
-      // also panic stop the hardware.
-      //
-      // Believe it or not this is not based on a horrific incident that happened or anything, it just dawned on me that
-      // something like this would be the right thing to do and I couldn't sleep until I did it. So now it's done.
-      println!("I'll get you my pretty!");
-      set_brake(BRAKE_STOP);
-      set_safety(SAFETY_NO);
-      std::process::exit(0)
-    }
+    _ = ctrl_c => graceful_shutdown(),
+    _ = terminate.recv() => graceful_shutdown(),
+    _ = interrupt.recv() => graceful_shutdown()
   }
 }
 
@@ -267,6 +264,20 @@ fn state_change_evaluator(current_state: Windmill, desired_state: Windmill) -> W
       Windmill::Cooldown(100)
     }
   }
+}
+
+/// Simple clean up task for when the application is manually killed. This will turn off the brake and disable the
+/// safety which relays the PWM signal. This should pull the motor controller off and discharge the motor to the braking
+/// resistor. This isn't totally fool-proof, but at least if you hit CTRL-C in a panic it'll attempt to also panic stop
+/// the hardware.
+///
+/// Believe it or not this is not based on a horrific incident that happened or anything, it just dawned on me that
+/// something like this would be the right thing to do and I couldn't sleep until I did it. So now it's done.
+fn graceful_shutdown() -> Result<(), &'static str> {
+  println!("I'll get you my pretty!");
+  set_brake(BRAKE_STOP);
+  set_safety(SAFETY_NO);
+  std::process::exit(0)
 }
 
 #[cfg(not(test))]

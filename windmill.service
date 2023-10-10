@@ -1,0 +1,16 @@
+[Unit]
+Description=DMX Windmill
+Wants=network.target
+After=syslog.target
+PartOf=olad.service
+After=olad.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/windmill
+Restart=on-failure
+RestartSec=10
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
