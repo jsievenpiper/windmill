@@ -34,12 +34,15 @@ const BRAKE_PIN: i32 = 3;
 const MOTOR_DIRECTION_PIN: i32 = 4;
 const FORWARD_DRIVING_PIN: i32 = 9;
 const REVERSE_DRIVING_PIN: i32 = 10;
+const SAFETY_PIN: i32 = 13;
 const BRAKE_STOP: i32 = wiringpi::DIGITAL_LOW;
 const BRAKE_RUN: i32 = wiringpi::DIGITAL_HIGH;
 const MOTOR_DIRECTION_FORWARD: i32 = wiringpi::DIGITAL_LOW;
 const MOTOR_DIRECTION_REVERSE: i32 = wiringpi::DIGITAL_HIGH;
 const DRIVING_INACTIVE: i32 = wiringpi::DIGITAL_LOW;
 const DRIVING_ACTIVE: i32 = wiringpi::DIGITAL_HIGH;
+const SAFETY_NO: i32 = wiringpi::DIGITAL_LOW;
+const SAFETY_GO: i32 = wiringpi::DIGITAL_HIGH;
 const INPUT_MIN: u8 = u8::MIN;
 const INPUT_MAX: u8 = u8::MAX;
 const OUTPUT_MIN: u8 = u8::MIN;
@@ -88,8 +91,10 @@ async fn main() -> Result<(), &'static str> {
     wiringpi::pin_mode(MOTOR_DIRECTION_PIN, wiringpi::PIN_MODE_OUTPUT);
     wiringpi::pin_mode(FORWARD_DRIVING_PIN, wiringpi::PIN_MODE_OUTPUT);
     wiringpi::pin_mode(REVERSE_DRIVING_PIN, wiringpi::PIN_MODE_OUTPUT);
+    wiringpi::pin_mode(SAFETY_PIN, wiringpi::PIN_MODE_OUTPUT);
     set_direction_forward();
     set_brake(BRAKE_STOP);
+    set_safety(SAFETY_GO);
 
     let driver = pwm::init(0, 0, 20000)?;
 
@@ -156,12 +161,27 @@ async fn main() -> Result<(), &'static str> {
     }
   });
 
+  let abort_task = tokio::signal::ctrl_c();
+
   // So here's the thing: if we've done our job correctly, neither of these processes will die, and we'll be happy
   // campers. If something goes wrong, `select!` will make sure that the first thing to die quickly kills the rest of
   // the program and returns that error as the application error.
   select! {
     ola_err = ola_task => ola_err.map_err(|_| "OpenLightingArchitecture thread panicked!")?,
-    windmill_err = windmill_task => windmill_err.map_err(|_| "Windmill thread panicked!")?
+    windmill_err = windmill_task => windmill_err.map_err(|_| "Windmill thread panicked!")?,
+    _ = abort_task => {
+      // Simple clean up task for when the application is manually killed. This will turn off the brake and disable the
+      // safety which relays the PWM signal. This should pull the motor controller off and discharge the motor to the
+      // braking resistor. This isn't totally fool-proof, but at least if you hit CTRL-C in a panic it'll attempt to
+      // also panic stop the hardware.
+      //
+      // Believe it or not this is not based on a horrific incident that happened or anything, it just dawned on me that
+      // something like this would be the right thing to do and I couldn't sleep until I did it. So now it's done.
+      println!("I'll get you my pretty!");
+      set_brake(BRAKE_STOP);
+      set_safety(SAFETY_NO);
+      std::process::exit(0)
+    }
   }
 }
 
@@ -251,6 +271,16 @@ fn set_brake(value: i32) {
 
 #[cfg(test)]
 fn set_brake(value: i32) {
+  // no-op for testing
+}
+
+#[cfg(not(test))]
+fn set_safety(value: i32) {
+  wiringpi::digital_write(SAFETY_PIN, value);
+}
+
+#[cfg(test)]
+fn set_safety(value: i32) {
   // no-op for testing
 }
 
