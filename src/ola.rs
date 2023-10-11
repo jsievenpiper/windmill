@@ -16,6 +16,7 @@ use crate::ola::dmx::{Buffer, Metadata};
 /// decrement by one when actually indexing with these channel references.
 pub fn start(
   sender: UnboundedSender<Windmill>,
+  universe: u32,
   speed_channel: u32,
   direction_channel: u32
 ) -> Result<(), &'static str> {
@@ -40,7 +41,7 @@ pub fn start(
     }
   };
 
-  let client: UniquePtr<dmx::Client> = dmx::Bridge::new(0, &on_dmx).into();
+  let client: UniquePtr<dmx::Client> = dmx::Bridge::new(universe, &on_dmx).into();
 
   if !client.setup() {
     return Err("Failed to initialize Open Lighting Architecture client.");

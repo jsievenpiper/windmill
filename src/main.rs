@@ -87,7 +87,7 @@ async fn main() -> Result<(), &'static str> {
   let ola_task = tokio::task::spawn_blocking(move || {
     // Once start is called here, this task should never return. Under the hood it will call `Run` on the underlying
     // receive server. If this task returns, our fixture has failed.
-    ola::start(tx, args.speed_channel, args.direction_channel)
+    ola::start(tx, args.universe, args.speed_channel, args.direction_channel)
   });
 
   // Start another process for the receiving end, which will use the OrangePi's physical GPIO pins to dive a PWM signal
